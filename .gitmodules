@@ -1,6 +1,6 @@
 [submodule "third_party/eipl"]
 	path = third_party/eipl
-	url = https://github.com/mmurooka/eipl
+	url = https://github.com/hanebarla/eipl
         ignore = untracked
 [submodule "third_party/act"]
 	path = third_party/act
