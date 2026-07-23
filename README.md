@@ -30,9 +30,6 @@ Experiments for Cloth and additional tasks are planned on a shared branch:
 
 - Cloth and additional tasks: `input-adaptive-leakage-v3based`
 
-This branch name is a placeholder and will be replaced when the branch is
-published.
-
 ## Reproduce the experiments
 
 Apptainer is the reference environment. Build and smoke-test it from the
