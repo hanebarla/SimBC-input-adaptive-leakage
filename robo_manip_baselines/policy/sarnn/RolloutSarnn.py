@@ -11,10 +11,90 @@ from robo_manip_baselines.common import (
     denormalize_data,
 )
 
+from .LIFController import RuleBaseController
+from .QCFSSarnnPolicy import QCFSSarnnPolicy
 from .SarnnPolicy import SarnnPolicy
 
 
 class RolloutSarnn(RolloutBase):
+    def set_additional_args(self, parser):
+        parser.add_argument(
+            "--lif_cnt",
+            choices=["none", "rule"],
+            default="none",
+            help="controller used to adapt leakage from the first camera image",
+        )
+        parser.add_argument(
+            "--la_rb_k",
+            type=float,
+            default=1.0,
+            help="gain of the rule-based leakage controller",
+        )
+        parser.add_argument(
+            "--la_rb_thresh",
+            type=float,
+            default=0.5,
+            help="frame-difference threshold of the rule-based controller",
+        )
+        parser.add_argument(
+            "--qcfs_T",
+            type=int,
+            default=None,
+            help="override checkpoint QCFS timesteps (0 selects ANN mode)",
+        )
+        parser.add_argument(
+            "--no_reset",
+            action="store_true",
+            help="retain QCFS state between consecutive policy inferences",
+        )
+        parser.add_argument(
+            "--lif_alpha",
+            type=float,
+            default=0.0,
+            help="fixed centered membrane leakage coefficient",
+        )
+        parser.add_argument(
+            "--spike_dec_type",
+            choices=["default", "decay"],
+            default="default",
+            help="temporal spike decoder",
+        )
+        parser.add_argument(
+            "--use_test_offset",
+            action="store_true",
+            help="use the 21-condition Cloth evaluation offsets",
+        )
+
+    def _validate_qcfs_rollout_args(self, is_qcfs, qcfs_T):
+        if not 0.0 <= self.args.lif_alpha <= 1.0:
+            raise ValueError("lif_alpha must be in [0, 1].")
+        if not is_qcfs:
+            qcfs_option_used = any(
+                (
+                    self.args.qcfs_T is not None,
+                    self.args.no_reset,
+                    self.args.lif_cnt != "none",
+                    self.args.lif_alpha != 0.0,
+                    self.args.spike_dec_type != "default",
+                )
+            )
+            if qcfs_option_used:
+                raise ValueError("QCFS rollout options require a QCFS checkpoint.")
+            return
+        if qcfs_T < 0:
+            raise ValueError("qcfs_T must be a non-negative integer.")
+        if qcfs_T == 0 and self.args.no_reset:
+            raise ValueError("--no_reset requires qcfs_T greater than zero.")
+        if qcfs_T == 0 and self.args.spike_dec_type == "decay":
+            raise ValueError("The decay decoder requires qcfs_T greater than zero.")
+        if self.args.lif_cnt == "rule":
+            if qcfs_T == 0:
+                raise ValueError("lif_cnt=rule requires qcfs_T greater than zero.")
+            if not self.args.no_reset:
+                raise ValueError("lif_cnt=rule requires --no_reset.")
+            if self.args.spike_dec_type != "decay":
+                raise ValueError("lif_cnt=rule requires --spike_dec_type decay.")
+
     def setup_policy(self):
         # Print policy information
         self.print_policy_info()
@@ -26,15 +106,43 @@ class RolloutSarnn(RolloutBase):
             f"  - num attentions: {self.model_meta_info['policy']['args']['num_attentions']}"
         )
 
-        # Construct policy
-        self.policy = SarnnPolicy(
-            self.state_dim,
-            len(self.camera_names),
-            **self.model_meta_info["policy"]["args"],
+        policy_args = dict(self.model_meta_info["policy"]["args"])
+        is_qcfs = any(
+            key in policy_args
+            for key in ("qcfs_L", "qcfs_T", "thresh", "reset", "lif_alpha")
         )
+        if is_qcfs:
+            qcfs_T = (
+                policy_args.get("qcfs_T", 0)
+                if self.args.qcfs_T is None
+                else self.args.qcfs_T
+            )
+            self._validate_qcfs_rollout_args(True, qcfs_T)
+            policy_args.update(
+                {
+                    "qcfs_T": qcfs_T,
+                    "reset": not self.args.no_reset,
+                    "lif_alpha": self.args.lif_alpha,
+                    "spike_dec_type": self.args.spike_dec_type,
+                }
+            )
+            self.policy = QCFSSarnnPolicy(
+                self.state_dim, len(self.camera_names), **policy_args
+            )
+        else:
+            self._validate_qcfs_rollout_args(False, 0)
+            self.policy = SarnnPolicy(
+                self.state_dim, len(self.camera_names), **policy_args
+            )
 
-        # Load checkpoint
-        self.load_ckpt("cpu")
+        self.lif_controller = None
+        if self.args.lif_cnt == "rule":
+            self.lif_controller = RuleBaseController(
+                k=self.args.la_rb_k, threshold=self.args.la_rb_thresh
+            )
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.load_ckpt(device)
 
     def setup_plot(self):
         fig_ax = plt.subplots(
@@ -55,6 +163,10 @@ class RolloutSarnn(RolloutBase):
         super().reset_variables()
 
         self.lstm_state = None
+        if hasattr(self.policy, "reset_qcfs_state"):
+            self.policy.reset_qcfs_state()
+        if self.lif_controller is not None:
+            self.lif_controller.reset()
 
         self.policy_action_list = np.empty((0, self.state_dim))
         self.state_list = np.empty((0, self.state_dim))
@@ -66,6 +178,10 @@ class RolloutSarnn(RolloutBase):
     def infer_policy(self):
         state = self.get_state()
         image_list = self.get_images()
+        if self.lif_controller is not None:
+            alpha = self.lif_controller(image_list[0])
+            self.policy.update_LIF_param(alpha)
+
         (
             predicted_state,
             predicted_image_list,
@@ -73,7 +189,7 @@ class RolloutSarnn(RolloutBase):
             predicted_attention_list,
             self.lstm_state,
         ) = self.policy(state, image_list, self.lstm_state)
-        predicted_state = predicted_state[0].detach().numpy().astype(np.float64)
+        predicted_state = predicted_state[0].detach().cpu().numpy().astype(np.float64)
         self.policy_action = denormalize_data(
             predicted_state, self.model_meta_info["state"]
         )
@@ -82,21 +198,21 @@ class RolloutSarnn(RolloutBase):
         )
 
         # Store for plot
-        state = state[0].detach().numpy().astype(np.float64)
+        state = state[0].detach().cpu().numpy().astype(np.float64)
         state = denormalize_data(state, self.model_meta_info["state"])
         self.state_list = np.concatenate([self.state_list, state[np.newaxis]])
         self.image_list = [
-            image[0].detach().numpy().transpose(1, 2, 0) for image in image_list
+            image[0].detach().cpu().numpy().transpose(1, 2, 0) for image in image_list
         ]
         self.predicted_image_list = [
-            predicted_image[0].detach().numpy().transpose(1, 2, 0).clip(0.0, 1.0)
+            predicted_image[0].detach().cpu().numpy().transpose(1, 2, 0).clip(0.0, 1.0)
             for predicted_image in predicted_image_list
         ]
         self.attention_list = [
-            attention[0].detach().numpy() for attention in attention_list
+            attention[0].detach().cpu().numpy() for attention in attention_list
         ]
         self.predicted_attention_list = [
-            predicted_attention[0].detach().numpy()
+            predicted_attention[0].detach().cpu().numpy()
             for predicted_attention in predicted_attention_list
         ]
 

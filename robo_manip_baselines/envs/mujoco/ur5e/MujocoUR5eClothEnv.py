@@ -5,12 +5,25 @@ import numpy as np
 
 from .MujocoUR5eEnvBase import MujocoUR5eEnvBase
 
+DEFAULT_CLOTH_Y_OFFSETS = np.array([-0.12, -0.08, -0.04, 0.0, 0.04, 0.08])
+
+
+def get_cloth_position_offsets(use_test_offset=False):
+    y_offsets = (
+        np.linspace(-0.12, 0.08, 21) if use_test_offset else DEFAULT_CLOTH_Y_OFFSETS
+    )
+    offsets = np.zeros((len(y_offsets), 3))
+    offsets[:, 1] = y_offsets
+    return offsets
+
 
 class MujocoUR5eClothEnv(MujocoUR5eEnvBase):
     def __init__(
         self,
+        use_test_offset=False,
         **kwargs,
     ):
+        self.use_test_offset = bool(use_test_offset)
         MujocoUR5eEnvBase.__init__(
             self,
             path.join(
@@ -33,16 +46,7 @@ class MujocoUR5eClothEnv(MujocoUR5eEnvBase):
 
         self.original_cloth_pos = self.model.body("cloth").pos.copy()
         self.original_board_pos = self.model.body("board").pos.copy()
-        self.pos_cloth_offsets = np.array(
-            [
-                [0.0, -0.12, 0.0],
-                [0.0, -0.08, 0.0],
-                [0.0, -0.04, 0.0],
-                [0.0, 0.0, 0.0],
-                [0.0, 0.04, 0.0],
-                [0.0, 0.08, 0.0],
-            ]
-        )  # [m]
+        self.pos_cloth_offsets = get_cloth_position_offsets(self.use_test_offset)
 
     def _get_reward(self):
         # Get grid position list of cloth

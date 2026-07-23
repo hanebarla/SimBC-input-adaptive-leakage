@@ -12,3 +12,7 @@ GPATH
 GRTAGS
 GSYMS
 GTAGS
+# Generated experiment assets
+*.sif
+checkpoints/
+results/

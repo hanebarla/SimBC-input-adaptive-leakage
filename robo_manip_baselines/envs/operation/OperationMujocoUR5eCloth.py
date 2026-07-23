@@ -40,8 +40,11 @@ class GraspPhase(GraspPhaseBase):
 
 class OperationMujocoUR5eCloth:
     def setup_env(self, render_mode="human"):
+        use_test_offset = getattr(getattr(self, "args", None), "use_test_offset", False)
         self.env = gym.make(
-            "robo_manip_baselines/MujocoUR5eClothEnv-v0", render_mode=render_mode
+            "robo_manip_baselines/MujocoUR5eClothEnv-v0",
+            render_mode=render_mode,
+            use_test_offset=use_test_offset,
         )
 
     def get_pre_motion_phases(self):

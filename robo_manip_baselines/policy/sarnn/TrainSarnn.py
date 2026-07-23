@@ -5,6 +5,7 @@ from tqdm import tqdm
 
 from robo_manip_baselines.common import DataKey, RmbData, TrainBase
 
+from .QCFSSarnnPolicy import QCFSSarnnPolicy
 from .SarnnDataset import SarnnDataset
 from .SarnnPolicy import SarnnPolicy
 
@@ -25,6 +26,15 @@ class TrainSarnn(TrainBase):
             raise ValueError(
                 f"[{self.__class__.__name__}] action_keys must be empty: {self.args.action_keys}"
             )
+
+        if self.args.qcfs_T < 0:
+            raise ValueError("qcfs_T must be a non-negative integer.")
+        if self.args.qcfs_L <= 0:
+            raise ValueError("qcfs_L must be positive.")
+        if self.args.qcfs_thresh <= 0:
+            raise ValueError("qcfs_thresh must be positive.")
+        if not 0.0 <= self.args.qcfs_lif_alpha <= 1.0:
+            raise ValueError("qcfs_lif_alpha must be in [0, 1].")
 
     def set_additional_args(self, parser):
         for action in parser._actions:
@@ -90,6 +100,40 @@ class TrainSarnn(TrainBase):
             default=50,
             help="Dimension of hidden state of LSTM",
         )
+        parser.add_argument(
+            "--use_qcfs",
+            action="store_true",
+            help="use QCFS activations in the image encoders",
+        )
+        parser.add_argument(
+            "--qcfs_L",
+            type=int,
+            default=8,
+            help="number of QCFS quantization levels",
+        )
+        parser.add_argument(
+            "--qcfs_T",
+            type=int,
+            default=0,
+            help="number of spiking timesteps (0 selects QCFS ANN mode)",
+        )
+        parser.add_argument(
+            "--qcfs_thresh",
+            type=float,
+            default=8.0,
+            help="initial QCFS firing threshold",
+        )
+        parser.add_argument(
+            "--qcfs_reset",
+            action="store_true",
+            help="reset membrane state before each model inference",
+        )
+        parser.add_argument(
+            "--qcfs_lif_alpha",
+            type=float,
+            default=0.0,
+            help="fixed centered membrane leakage coefficient",
+        )
 
     def setup_rmb_files(self):
         super().setup_rmb_files()
@@ -149,8 +193,21 @@ class TrainSarnn(TrainBase):
             "lstm_hidden_dim": self.args.lstm_hidden_dim,
         }
 
-        # Construct policy
-        self.policy = SarnnPolicy(
+        if self.args.use_qcfs:
+            self.model_meta_info["policy"]["args"].update(
+                {
+                    "qcfs_L": self.args.qcfs_L,
+                    "qcfs_T": self.args.qcfs_T,
+                    "thresh": self.args.qcfs_thresh,
+                    "reset": self.args.qcfs_reset,
+                    "lif_alpha": self.args.qcfs_lif_alpha,
+                }
+            )
+            policy_class = QCFSSarnnPolicy
+        else:
+            policy_class = SarnnPolicy
+
+        self.policy = policy_class(
             len(self.model_meta_info["state"]["example"]),
             len(self.args.camera_names),
             **self.model_meta_info["policy"]["args"],
@@ -281,6 +338,8 @@ class TrainSarnn(TrainBase):
         predicted_image_seq_list = [[] for _ in range(num_images)]
         attention_seq_list = [[] for _ in range(num_images)]
         predicted_attention_seq_list = [[] for _ in range(num_images)]
+        if hasattr(self.policy, "reset_qcfs_state"):
+            self.policy.reset_qcfs_state()
         for time_idx in range(len(state_seq[0]) - 1):
             (
                 predicted_state,

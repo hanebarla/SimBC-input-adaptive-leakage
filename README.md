@@ -1,123 +1,105 @@
-<p align="center">
-  <a href="https://isri-aist.github.io/RoboManipBaselines-ProjectPage">
-    <img src="https://github.com/user-attachments/assets/4a4a6429-7e3c-4cfa-90b3-ed54dd9019a3" alt="logo" width="300">
-  </a>
-  <br/>
-  <a href="https://github.com/isri-aist/RoboManipBaselines/actions/workflows/install.yml">
-    <img src="https://github.com/isri-aist/RoboManipBaselines/actions/workflows/install.yml/badge.svg" alt="CI-install">
-  </a>
-  <a href="https://github.com/isri-aist/RoboManipBaselines/actions/workflows/pre-commit.yml">
-    <img src="https://github.com/isri-aist/RoboManipBaselines/actions/workflows/pre-commit.yml/badge.svg" alt="CI-pre-commit">
-  </a>
-  <a href="https://github.com/isri-aist/RoboManipBaselines/blob/master/LICENSE">
-    <img src="https://img.shields.io/github/license/isri-aist/RoboManipBaselines" alt="LICENSE">
-  </a>
-</p>
+# SimBC Input-Adaptive Leakage
 
----
+This repository is a research fork of
+[RoboManipBaselines](https://github.com/isri-aist/RoboManipBaselines) for the
+SimBC input-adaptive leakage study. It preserves the upstream manipulation
+policies and environments while adding a reusable SARNN/QCFS inference path.
 
-# 🤖 [RoboManipBaselines](https://isri-aist.github.io/RoboManipBaselines-ProjectPage)
+The current `input-adaptive-leakage-v3based` branch contains:
 
-<a href="https://isri-aist.github.io/RoboManipBaselines-ProjectPage/"><strong>Project Page</strong></a> |
-<a href="https://arxiv.org/abs/2509.17057"><strong>arXiv</strong></a>
+- QCFS ANN inference (`T=0`) and conventional QCFS SNN conversion (`T>0`)
+- the proposed rule-based input-adaptive leakage with centered membrane
+  leakage, no-reset state, and decay firing-rate decoding
+- a 21-condition Cloth evaluation and a three-variant experiment runner
+- shared QCFS and input-adaptive leakage CLI options for other SARNN tasks
 
-A software framework integrating various **imitation learning methods** and **benchmark environments** for robotic manipulation.  
-Provides easy-to-use **baselines** for policy training, evaluation, and deployment.
+Cloth is the task with a experiment matrix on this branch.
+Task-specific experiment configurations for the other manipulation tasks will
+be added to the same `input-adaptive-leakage-v3based` branch.
 
-https://github.com/user-attachments/assets/c37c9956-2d50-488d-83ae-9c11c3900992
+## Reproduce the experiments
 
-https://github.com/user-attachments/assets/ba4a772f-0de5-47da-a4ec-bdcbf13d7d58
+Apptainer is the reference environment. Build and smoke-test it from the
+repository root:
 
----
+```bash
+git submodule update --init third_party/eipl
+apptainer build --fakeroot simbc-cu128.sif apptainer/simbc.def
+./scripts/apptainer_exec.sh --cpu python scripts/smoke_test.py --cpu
+./scripts/apptainer_exec.sh python scripts/smoke_test.py --gpu
+```
 
-## 🚀 Quick Start
+The image pins Ubuntu 22.04, Python 3.10, CUDA 12.8, PyTorch 2.11.0, and
+torchvision 0.26.0. The build host must have subordinate UID/GID mappings
+configured for `--fakeroot`; if they are unavailable, ask the system
+administrator to build the SIF. Running an existing SIF does not require
+fakeroot.
 
-Start collecting data in the **MuJoCo** simulation, train your model, and rollout the ACT policy in just a few steps!  
-📄 See the [Quick Start Guide](./doc/quick_start.md).
+The launcher enables NVIDIA passthrough and EGL by default. Use `--cpu` to
+disable `--nv`. Set `SIMBC_IMAGE` to use a differently named SIF,
+`SIMBC_DATA_DIR` to mount a host dataset at `/data`,
+`SIMBC_CHECKPOINT_DIR` to mount checkpoints at `/checkpoints`, and
+`SIMBC_OUTPUT_DIR` to mount results at `/results`. The checkpoint and output
+binds default to `./checkpoints` and `./results`.
 
----
+See the
+[SARNN/QCFS experiment guide](robo_manip_baselines/policy/sarnn/README.md)
+for the exact training and individual rollout commands.
 
-## ⚙️ Installation
+## Cloth experiment
 
-Follow our step-by-step [Installation Guide](./doc/install.md) to get set up smoothly.
+The Cloth evaluation shifts the cloth and board along the Y axis from
+`-0.12 m` to `0.08 m` in `0.01 m` increments, giving 21 initial conditions.
+The canonical comparison is:
 
----
+| Variant | Configuration |
+| --- | --- |
+| `qcfs_ann` | `T=0` |
+| `qcfs_snn_t3` | conventional SNN, `T=3`, reset each inference |
+| `input_adaptive_t4` | proposed method, `T=4`, `k=32`, threshold `0.03`, no reset, decay decoder |
 
-## 🧠 Policies
+Run all three variants with one checkpoint:
 
-We provide several powerful policy architectures for manipulation tasks:
+```bash
+./scripts/apptainer_exec.sh python \
+  robo_manip_baselines/misc/RunSarnnExperiment.py \
+  --checkpoint /checkpoints/<checkpoint-name>/policy_best.ckpt \
+  --output-dir /results \
+  --gpus 0
+```
 
-- 🔹 **[MLP](./robo_manip_baselines/policy/mlp)**: Simple feedforward policy
-- 🔹 **[SARNN](./robo_manip_baselines/policy/sarnn)**: Recurrent policy for sequential data
-- 🔹 **[ACT](./robo_manip_baselines/policy/act)**: Transformer-based action chunking policy
-- 🔹 **[MT-ACT](./robo_manip_baselines/policy/mt_act)**: Multi-task Transformer-based imitation policy
-- 🔹 **[Diffusion Policy](./robo_manip_baselines/policy/diffusion_policy)**: Diffusion-based imitation policy
-- 🔹 **[3D Diffusion Policy](./robo_manip_baselines/policy/diffusion_policy_3d)**: Diffusion-based policy with 3D point cloud input
-- 🔹 **[Flow Policy](./robo_manip_baselines/policy/flow_policy)**: Flow-matching-based policy with 3D point cloud input
-- 🔹 **[ManiFlow Policy](./robo_manip_baselines/policy/mani_flow_policy)**: Flow-matching and consistency-based policy with 2D/3D vision
-- 🔹 **[pi0](./robo_manip_baselines/policy/pi0)**: Flow-matching-based policy with a vision-language model backbone (PaliGemma)
-- 🔹 **[GR00T](./robo_manip_baselines/policy/gr00t)**: Diffusion Transformer-based policy with a vision-language model backbone (Eagle-2)
+Use `--dry-run` to inspect commands, `--gpus 0 1` and
+`--processes-per-gpu` to schedule multiple GPUs, and `--overwrite` only when
+replacing existing outputs. The runner writes
+`/results/cloth/<variant>/result.yaml` and
+`/results/cloth/<variant>/rollout.log`. The checkpoint directory must contain
+both the selected `.ckpt` and the matching `model_meta_info.pkl`.
 
----
+## Citation
 
-## 📦 Data
+### SimBC input-adaptive leakage
 
-- 📂 [Dataset List](./doc/dataset_list.md): Pre-collected expert demonstration datasets
-- 🧠 [Learned Parameters](./doc/learned_parameters.md): Trained model checkpoints and configs
-- 📄 [Data Format](./doc/rmb_data_format.md): Description of the custom RMB data format used in RoboManipBaselines
-- 🪄 [Point Cloud Preprocessing](./doc/preprocessing_pointcloud.md): Data preprocessing for 3D point cloud policies
+The bibliographic record for the SimBC input-adaptive leakage paper is not yet
+final. Replace every `TODO` field below before publication; this entry must not
+be treated as the final citation.
 
----
+```bibtex
+@article{TODO_simbc_input_adaptive_leakage,
+  author  = {TODO},
+  title   = {TODO: SimBC Input-Adaptive Leakage},
+  journal = {TODO},
+  year    = {TODO},
+  volume  = {TODO},
+  number  = {TODO},
+  pages   = {TODO},
+  doi     = {TODO},
+  url     = {TODO}
+}
+```
 
-## 🎮 Teleoperation
+### RoboManipBaselines
 
-Use your own teleop interface to collect expert data.  
-See [Teleop Tools](./robo_manip_baselines/teleop) for more info.
-
-- 🎮 [Multiple SpaceMouse](./doc/use_multiple_spacemouse.md): Setup multiple SpaceMouse for high-degree-of-freedom robots
-
----
-
-## 🌍 Environments
-
-Explore diverse manipulation environments:
-
-- 📚 [Environment Catalog](./doc/environment_catalog.md): Overview of all task environments
-- 🔧 [Env Setup](./robo_manip_baselines/envs): Installation guides per environment
-- ✏️ [How to Add a New Environment](./doc/how_to_add_env.md): Guide for adding a custom environment
-- 🔅️ [MuJoCo Tactile Sensor](./doc/mujoco_tactile_sensor.md): Guide for using tactile sensors in MuJoCo environments
-
----
-
-## 🧰 Miscellaneous
-
-Check out [Misc Scripts](./robo_manip_baselines/misc) for standalone tools and utilities.
-
----
-
-## 📊 Evaluation Results
-
-See [Benchmarked Performance](./doc/evaluation_results.md) across environments and policies.
-
----
-
-## 🤝 Contributing
-
-We welcome contributions!  
-Check out the [Contribution Guide](./CONTRIBUTING.md) to get started.
-
----
-
-## 📄 License
-
-This repository is licensed under the **BSD 2-Clause License**, unless otherwise stated.  
-Please check individual files or directories (especially `third_party` and `assets`) for specific license terms.
-
----
-
-## 📖 Citation
-
-If you use RoboManipBaselines in your work, please cite [our paper](https://arxiv.org/abs/2509.17057):
+Please also cite the original RoboManipBaselines paper:
 
 ```bibtex
 @article{RoboManipBaselines_Murooka_2025,
@@ -128,4 +110,18 @@ If you use RoboManipBaselines in your work, please cite [our paper](https://arxi
 }
 ```
 
----
+The original software citation remains available in [CITATION.cff](CITATION.cff).
+Please also retain the SARNN citation in the
+[SARNN/QCFS experiment guide](robo_manip_baselines/policy/sarnn/README.md).
+
+## Upstream project and licensing
+
+RoboManipBaselines authorship, environments, policies, and BSD-2-Clause
+licensing are retained. The EIPL submodule and input-adaptive spiking
+extensions are distributed under AGPL-3.0; file-level notices and
+`third_party/eipl/LICENSE` take precedence where applicable.
+
+For the full upstream documentation, visit the
+[RoboManipBaselines project page](https://isri-aist.github.io/RoboManipBaselines-ProjectPage)
+or the
+[upstream repository](https://github.com/isri-aist/RoboManipBaselines).

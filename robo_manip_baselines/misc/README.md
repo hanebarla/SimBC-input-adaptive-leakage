@@ -46,6 +46,18 @@ $ python ./DisplayCameraImage.py --camera_name RealSense --crop_size 280 280
 
 A camera can also be specified by `--camera_id` instead of `--camera_name`.
 
+## Experiment utilities
+
+### Run the Cloth SARNN comparison
+
+Run QCFS ANN, conventional SNN, and input-adaptive SNN over all 21 Cloth
+conditions. See the [SARNN documentation](../policy/sarnn) for the exact matrix
+and output layout.
+
+```console
+$ python ./RunSarnnExperiment.py --checkpoint <checkpoint> --output-dir <output-dir> --gpus 0
+```
+
 ## Video utilities
 ### Tile rollout videos
 The input is a video consisting of a sequence of multiple rollouts, and the output is a tiled video of each rollout.

@@ -1,3 +1,4 @@
+from .QCFSSarnnPolicy import QCFSSarnnPolicy
 from .SarnnPolicy import SarnnPolicy
 from .SarnnDataset import SarnnDataset
 from .TrainSarnn import TrainSarnn
