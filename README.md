@@ -26,7 +26,7 @@ The public scope contains:
 Ring is the default task used by generic commands and documentation examples;
 Particle and Cable remain fully supported through their task-specific paths.
 
-Experiments for Cloth and additional tasks are planned on a shared branch:
+Experiments for Cloth and additional tasks are planned on a shared branch based on Robomanipbaselines v3.0.0:
 
 - Cloth and additional tasks: `input-adaptive-leakage-v3based`
 
