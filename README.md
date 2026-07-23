@@ -6,7 +6,7 @@ Network Inference Latency for Behavior Cloning with Input Adaptive Leakage".
 The corresponding
 [real-robot experiment code](https://github.com/hanebarla/RealBC-input-adaptive-leakage)
 and the
-[EIPL implementation](https://github.com/hanebarla/eipl)
+[SARNN implementation](https://github.com/hanebarla/eipl)
 are available in separate repositories.
 
 It is a research fork of
