@@ -1,6 +1,15 @@
-# SimBC Input-Adaptive Leakage
+# Reducing Spiking Neural Network Inference Latency for Behavior Cloning with Input Adaptive Leakage
 
-This repository is a research fork of
+This repository contains the behavior cloning training, simulation evaluation,
+and analysis implementation used for the paper "Reducing Spiking Neural
+Network Inference Latency for Behavior Cloning with Input Adaptive Leakage".
+The corresponding
+[real-robot experiment code](https://github.com/hanebarla/RealBC-input-adaptive-leakage)
+and the
+[EIPL implementation](https://github.com/hanebarla/eipl)
+are available in separate repositories.
+
+It is a research fork of
 [RoboManipBaselines](https://github.com/isri-aist/RoboManipBaselines) for the
 SimBC input-adaptive leakage study. It preserves the upstream manipulation
 policies and environments while adding a reusable SARNN/QCFS inference path.
