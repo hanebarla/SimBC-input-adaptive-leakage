@@ -3,7 +3,8 @@ from robo_manip_baselines.common.rollout import RolloutMujocoUR5eCable
 
 
 class RolloutSarnnMujocoUR5eCable(RolloutSarnn, RolloutMujocoUR5eCable):
-    pass
+    TASK_NAME = "cable"
+    ENV_ID = "robo_manip_baselines/MujocoUR5eCableEnv-v0"
 
 
 if __name__ == "__main__":

@@ -121,6 +121,7 @@ class MujocoEnvBase(MujocoEnv, metaclass=ABCMeta):
     def close(self):
         for camera in self.cameras.values():
             camera["viewer"].close()
+        self.mujoco_renderer._viewers.pop("dummy", None)
         MujocoEnv.close(self)
 
     def get_joint_pos_from_obs(self, obs, exclude_gripper=False):

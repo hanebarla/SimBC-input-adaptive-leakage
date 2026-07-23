@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "robo_manip_baselines"
-description = "Software that integrates various imitation learning methods and benchmark task environments to provide baselines for robot manipulation"
+description = "RoboManipBaselines research fork for SimBC input-adaptive leakage experiments"
 readme = "README.md"
 authors = [
   {name = "Masaki Murooka", email = "m-murooka@aist.go.jp"},
@@ -12,9 +12,9 @@ authors = [
   {name = "Ryoichi Nakajo", email = "ryoichi-nakajo@aist.go.jp"},
 ]
 maintainers = [
-  {name = "Masaki Murooka", email = "m-murooka@aist.go.jp"},
+  {name = "Takehiro Habara"},
 ]
-requires-python = ">= 3.8"
+requires-python = ">= 3.10"
 dependencies = [
   "ipdb",
   "ipython",
@@ -40,6 +40,7 @@ sarnn = [
   "tensorboard",
   "torchinfo",
   "gdown",
+  "imageio-ffmpeg",
 ]
 act = [
   "torch",
@@ -92,5 +93,14 @@ benchmarks = [
   "ffmpeg-python",
 ]
 
+[project.urls]
+Fork = "https://github.com/hanebarla/SimBC-input-adaptive-leakage"
+Issues = "https://github.com/hanebarla/SimBC-input-adaptive-leakage/issues"
+Upstream = "https://github.com/isri-aist/RoboManipBaselines"
+EIPL = "https://github.com/hanebarla/eipl"
+
 [tool.setuptools.packages.find]
 include = ["robo_manip_baselines", "robo_manip_baselines.*"]
+
+[tool.setuptools.package-data]
+robo_manip_baselines = ["envs/assets/**/*"]

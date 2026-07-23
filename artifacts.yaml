@@ -1,0 +1,34 @@
+schema_version: 1
+default_task: ring
+upstream_datasets:
+  cable:
+    name: TeleopMujocoUR5eCable_Dataset30
+    owner: isri-aist/RoboManipBaselines
+    url: "https://www.dropbox.com/scl/fi/2e2on6pl26x0m2l4c0qr6/TeleopMujocoUR5eCable_Dataset30_20241028.zip?rlkey=ua659cleqn2ncqd5ik9zri4h7&st=bbnduu2w&dl=1"
+  particle:
+    name: TeleopMujocoUR5eParticle_Dataset30
+    owner: isri-aist/RoboManipBaselines
+    url: "https://www.dropbox.com/scl/fi/y5aocgzpc85fx2tjtdcqs/TeleopMujocoUR5eParticle_Dataset30_20241031.zip?rlkey=3lwul2am7tlxjoayluf9j3yjy&dl=1"
+  ring:
+    name: TeleopMujocoUR5eRing_Dataset30
+    owner: isri-aist/RoboManipBaselines
+    url: "https://www.dropbox.com/scl/fi/cg3qd7k5scmpxnj0t4qa5/TeleopMujocoUR5eRing_Dataset30_20241031.zip?rlkey=jgbwglrqi7svvrggpawrazg5r&dl=1"
+checkpoints:
+  cable:
+    status: not_published
+    url: null
+    sha256: ca30496862967f66de7c0dfdc900182480b87be5c9bf65787b3cc9c04b12847d
+    note: Final training depends on an unpublished L=12 pretrained checkpoint.
+  particle:
+    status: not_published
+    url: null
+    sha256: af09a6f9a0050082eda35a52cec4c8049b27f8980b53cca3372637c050297d96
+  ring:
+    status: not_published
+    url: null
+    sha256: 307b2c5f4c2674af6c8028125970f6206aca4bc8bb35952ea1d1acf3f9193d11
+software:
+  eipl:
+    repository: https://github.com/hanebarla/eipl
+    commit: 5b09691a9b43e8b1bf61aee3ac718c49c23e2c2e
+    branch: input-adaptive-leakage

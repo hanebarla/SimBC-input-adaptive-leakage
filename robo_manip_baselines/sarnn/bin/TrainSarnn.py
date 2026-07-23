@@ -20,6 +20,10 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
 
 from eipl.utils import EarlyStopping, check_args, set_logdir, normalization
+from robo_manip_baselines.sarnn.lib.model_utils import (
+    build_front_action_model,
+    load_checkpoint,
+)
 
 
 class TrainSarnn(object):
@@ -59,6 +63,15 @@ class TrainSarnn(object):
         parser.add_argument("--device", type=int, default=0)
         parser.add_argument("--compile", action="store_true")
         parser.add_argument("--tag", help="Tag name for snap/log sub directory")
+        parser.add_argument("--scheduler", action="store_true")
+        parser.add_argument("--im_size", type=int, nargs=2, default=[128, 128])
+        parser.add_argument("--qcfs", action="store_true")
+        parser.add_argument("--qcfs_L", type=int, default=8)
+        parser.add_argument("--qcfs_T", type=int, default=0)
+        parser.add_argument("--qcfs_L_change_epochs", type=int, nargs="+", default=[])
+        parser.add_argument("--wobn", action="store_true")
+        parser.add_argument("--reverse_step", action="store_true")
+        parser.add_argument("--pretrained_model_path", type=str)
 
         args = parser.parse_args()
         self.args = check_args(args)
@@ -185,7 +198,7 @@ class TrainSarnn(object):
                 from robo_manip_baselines.sarnn import RmbSarnnDatasetWithMask
 
                 test_dataset = RmbSarnnDatasetWithMask(
-                    front_images, joints, masks, device=self.device, stdev=stdev
+                    front_images, joints, masks, device=self.device, stdev=None
                 )
             else:
                 from eipl.data import MultimodalDataset
@@ -221,19 +234,37 @@ class TrainSarnn(object):
                 im_size=[64, 64],
             )
         elif self.args.no_side_image and self.args.no_wrench:
-            from eipl.model import SARNN
-
-            self.model = SARNN(
-                rec_dim=self.args.rec_dim,
-                joint_dim=joint_dim,
-                k_dim=self.args.k_dim,
-                heatmap_size=self.args.heatmap_size,
-                temperature=self.args.temperature,
-                im_size=[64, 64],
+            if self.args.qcfs and not self.args.wobn:
+                raise ValueError(
+                    "The public QCFS architecture has no BatchNorm; pass --wobn"
+                )
+            initial_qcfs_l = self.args.qcfs_L
+            if self.args.qcfs_L_change_epochs:
+                factor = 2 ** len(self.args.qcfs_L_change_epochs)
+                initial_qcfs_l = (
+                    self.args.qcfs_L // factor
+                    if self.args.reverse_step
+                    else self.args.qcfs_L * factor
+                )
+                if initial_qcfs_l < 1:
+                    raise ValueError("The initial qcfs_L must be at least one")
+            model_params = vars(self.args).copy()
+            model_params["qcfs_L"] = initial_qcfs_l
+            self.model = build_front_action_model(
+                model_params,
+                joint_dim,
             )
         else:
             raise AssertionError(
                 f"Not asserted (no_side_image, no_wrench): {(self.args.no_side_image, self.args.no_wrench)}"
+            )
+
+        if self.args.pretrained_model_path is not None:
+            print(f"[TrainSarnn] Load {self.args.pretrained_model_path}")
+            load_checkpoint(
+                self.model,
+                self.args.pretrained_model_path,
+                map_location=self.device,
             )
 
         # torch.compile makes PyTorch code run faster
@@ -243,6 +274,13 @@ class TrainSarnn(object):
 
         # set optimizer
         self.optimizer = optim.Adam(self.model.parameters(), eps=1e-07, lr=self.args.lr)
+        self.scheduler = (
+            optim.lr_scheduler.MultiStepLR(
+                self.optimizer, milestones=[4000, 7000], gamma=0.1
+            )
+            if self.args.scheduler
+            else None
+        )
 
         # load trainer/tester class
         if (not self.args.no_side_image) and (not self.args.no_wrench):
@@ -302,6 +340,7 @@ class TrainSarnn(object):
         writer = SummaryWriter(log_dir=self.log_dir_path, flush_secs=30)
         early_stop = EarlyStopping(patience=1000)
 
+        qcfs_l_change_index = 0
         with tqdm(range(self.args.epoch)) as pbar_epoch:
             for epoch in pbar_epoch:
                 # train and test
@@ -318,6 +357,19 @@ class TrainSarnn(object):
 
                 if save_ckpt:
                     self.trainer.save(epoch, [train_loss, test_loss], save_name)
+
+                if (
+                    qcfs_l_change_index < len(self.args.qcfs_L_change_epochs)
+                    and epoch == self.args.qcfs_L_change_epochs[qcfs_l_change_index]
+                ):
+                    current_l = self.model.get_IF_L()
+                    next_l = current_l * 2 if self.args.reverse_step else current_l // 2
+                    self.model.update_IF_L(next_l)
+                    qcfs_l_change_index += 1
+                    print(f"[TrainSarnn] Updated qcfs_L to {next_l}")
+
+                if self.scheduler is not None:
+                    self.scheduler.step()
 
                 # print process bar
                 pbar_epoch.set_postfix(

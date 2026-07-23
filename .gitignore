@@ -12,3 +12,12 @@ GPATH
 GRTAGS
 GSYMS
 GTAGS
+
+# Generated experiment assets
+*.pth
+*.pt
+*.pkl
+*.mp4
+*.sif
+checkpoints/
+results/

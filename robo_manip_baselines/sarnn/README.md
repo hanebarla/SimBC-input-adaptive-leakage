@@ -1,55 +1,35 @@
-# Spatial attention recurrent neural network (SARNN)
+# SARNN/QCFS experiments
 
-## Install
-See [here](../../doc/install.md#SARNN) for installation.
+This fork retains the upstream Spatial Attention Recurrent Neural Network
+(SARNN) implementation and adds the public QCFS and input-adaptive leakage
+experiments for Ring, Particle, and Cable.
 
-## Dataset preparation
-Collect demonstration data by [teleoperation](../teleop).
+## Public configuration
 
-Generate a `npy` format dataset for learning from teleoperation data:
-```console
-$ python ../utils/make_dataset.py \
---in_dir ../teleop/teleop_data/<demo_name> --out_dir ./data/<demo_name> \
---train_ratio 0.8 --nproc `nproc` --skip 6 --cropped_img_size 280 --resized_img_size 64
-```
-The `--cropped_img_size` option should be specified appropriately for each task.
+The released training path uses front images and actions with masks, no side
+image, no wrench, no BatchNorm, 128 x 128 images, `qcfs_L=8`, `k_dim=20`,
+and `rec_dim=50`. Dataset preparation uses a centered 480-pixel crop, resize
+to 128, temporal skip 6, and a seed-fixed 24/6 split for the 30 source
+demonstrations. The commands below use Ring as the default task example.
 
-Visualize the generated data (optional):
-```console
-$ python ../utils/check_data.py --in_dir ./data/<demo_name> --idx 0
-```
+```bash
+python ../utils/make_dataset.py \
+  --in_dir /data/raw/ring --out_dir /data/processed/ring \
+  --train_ratio 0.8 --split_seed 0
 
-## Model training
-Train a model:
-```console
-$ python ./bin/TrainSarnn.py \
---data_dir ./data/<demo_name> --log_dir ./log/<demo_name> \
---no_side_image --no_wrench --with_mask
-```
-The checkpoint file `SARNN.pth` is saved in the directory specified by the `--log_dir` option.
-
-Visualize an animation of prediction (optional):
-```console
-$ python ./bin/test.py --data_dir ./data/<demo_name> --filename ./log/<demo_name>/SARNN.pth --no_side_image --no_wrench
+python bin/TrainSarnn.py \
+  --data_dir /data/processed/ring --log_dir /results/train/ring \
+  --no_side_image --no_wrench --with_mask --im_size 128 128 \
+  --qcfs --qcfs_L 8 --qcfs_T 0 --wobn --k_dim 20 --rec_dim 50
 ```
 
-Visualize the internal representation of the RNN in prediction (optional):
-```console
-$ python ./bin/test_pca.py --data_dir ./data/<demo_name> --filename ./log/<demo_name>/SARNN.pth --no_side_image --no_wrench
-```
+Use the task-specific scripts in `scripts/run_*_rollout_jobs.py` for the
+canonical 63-job matrices. The full procedure and output schema are in the
+[reproduction guide](../../doc/reproduction.md).
 
-## Policy rollout
-Run a trained policy:
-```console
-$ python ./bin/rollout/RolloutSarnnMujocoUR5eCable.py \
---checkpoint ./log/<demo_name>/SARNN.pth \
---cropped_img_size 280 --skip 6 --world_idx 0
-```
-The `--cropped_img_size` option must be the same as for dataset generation.
+## SARNN citation
 
-## Technical Details
-For more information on the technical details, please see the following paper:
-```bib
+```bibtex
 @INPROCEEDINGS{SARNN_ICRA2022,
   author = {Ichiwara, Hideyuki and Ito, Hiroshi and Yamamoto, Kenjiro and Mori, Hiroki and Ogata, Tetsuya},
   title = {Contact-Rich Manipulation of a Flexible Object based on Deep Predictive Learning using Vision and Tactility},

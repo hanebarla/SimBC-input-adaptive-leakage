@@ -1,25 +1,30 @@
 import sys
 import os
 import glob
+import json
 import argparse
 import numpy as np
 from multiprocessing import Pool
 from pathlib import Path
-import random
 import cv2
 from array_utils import calc_minmax, stack_arrays_with_padding
 from robo_manip_baselines.common import DataKey, DataManager
+from robo_manip_baselines.utils.dataset_split import (
+    deterministic_split,
+    validate_split,
+)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--in_dir", type=str, required=True)
 parser.add_argument("--out_dir", type=str, required=True)
-parser.add_argument("--train_ratio", type=float, required=False)
+parser.add_argument("--train_ratio", type=float, default=0.8)
 parser.add_argument("--test_ratio", type=float, required=False)
 parser.add_argument("--train_keywords", nargs="*", required=False)
 parser.add_argument("--test_keywords", nargs="*", required=False)
-parser.add_argument("--skip", type=int, default=1)
-parser.add_argument("--cropped_img_size", type=int, required=False)
-parser.add_argument("--resized_img_size", type=int, required=False)
+parser.add_argument("--skip", type=int, default=6)
+parser.add_argument("--cropped_img_size", type=int, default=480)
+parser.add_argument("--resized_img_size", type=int, default=128)
+parser.add_argument("--split_seed", type=int, default=0)
 parser.add_argument("-j", "--nproc", type=int, default=1)
 parser.add_argument("-q", "--quiet", action="store_true")
 args = parser.parse_args()
@@ -101,11 +106,11 @@ def load_data(in_dir, skip, resized_img_size, nproc):
     except AssertionError:
         sys.stderr.write(f"{sys.stderr.name} {in_dir=}\n")
         raise
-    pool = Pool(nproc)
-    loaded_data = pool.map(
-        load_skip_resize_data,
-        [(skip, resized_img_size, in_file_name) for in_file_name in in_file_names],
-    )
+    with Pool(nproc) as pool:
+        loaded_data = pool.map(
+            load_skip_resize_data,
+            [(skip, resized_img_size, in_file_name) for in_file_name in in_file_names],
+        )
 
     seq_length = []
     for _front_images, _side_images, _wrenches, _joints, _actions in loaded_data:
@@ -141,37 +146,29 @@ if __name__ == "__main__":
     )
 
     # Set dataset index
-    train_idx_list, test_idx_list = list(), list()
-    if (args.train_ratio is None) and (args.test_ratio is not None):
-        raise ValueError(
-            'The "test_ratio" option is available only when the "train_ratio" option is given.'
+    if args.train_keywords is None:
+        train_idx_list, test_idx_list = deterministic_split(
+            len(in_file_names),
+            train_ratio=args.train_ratio,
+            test_ratio=args.test_ratio,
+            seed=args.split_seed,
         )
-    if args.train_ratio is not None:
-        random_idx_list = list(range(len(in_file_names)))
-        random.shuffle(random_idx_list)
-        train_len = max(
-            int(np.clip(args.train_ratio, 0.0, 1.0) * len(in_file_names)), 1
-        )
-        train_idx_list = random_idx_list[:train_len]
-        if args.test_ratio is None:
-            test_idx_list = random_idx_list[train_len:]
-        else:
-            test_len = max(
-                int(np.clip(args.test_ratio, 0.0, 1.0) * len(in_file_names)), 1
-            )
-            test_idx_list = random_idx_list[-test_len:]
-    elif args.train_keywords is not None:
-        for idx, in_file_name in enumerate(in_file_names):
-            if any([(w in in_file_name) for w in args.train_keywords]):
-                train_idx_list.append(idx)
+    else:
+        train_idx_list = [
+            index
+            for index, filename in enumerate(in_file_names)
+            if any(keyword in filename for keyword in args.train_keywords)
+        ]
+        test_idx_list = [
+            index for index in range(len(in_file_names)) if index not in train_idx_list
+        ]
     if args.test_keywords is not None:
-        for idx, in_file_name in enumerate(in_file_names):
-            if any([(w in in_file_name) for w in args.test_keywords]):
-                test_idx_list.append(idx)
-    elif len(test_idx_list) == 0:
-        for idx in range(len(in_file_names)):
-            if idx not in train_idx_list:
-                test_idx_list.append(idx)
+        test_idx_list = [
+            index
+            for index, filename in enumerate(in_file_names)
+            if any(keyword in filename for keyword in args.test_keywords)
+        ]
+    train_idx_list, test_idx_list = validate_split(train_idx_list, test_idx_list)
     if not args.quiet:
         print()
         print(
@@ -268,3 +265,51 @@ if __name__ == "__main__":
     save_arr(args.out_dir, "wrench_bounds.npy", calc_minmax(wrenches), args.quiet)
     save_arr(args.out_dir, "joint_bounds.npy", calc_minmax(joints), args.quiet)
     save_arr(args.out_dir, "action_bounds.npy", calc_minmax(actions), args.quiet)
+
+    source_paths = [
+        os.path.relpath(filename, start=args.in_dir) for filename in in_file_names
+    ]
+    manifest = {
+        "schema_version": 1,
+        "preprocessing": {
+            "crop": args.cropped_img_size,
+            "resize": args.resized_img_size,
+            "skip": args.skip,
+            "split_seed": args.split_seed,
+            "train_ratio": args.train_ratio,
+            "test_ratio": args.test_ratio,
+        },
+        "source_files": source_paths,
+        "splits": {
+            "train": {
+                "indices": train_idx_list,
+                "source_files": [source_paths[index] for index in train_idx_list],
+                "count": len(train_idx_list),
+            },
+            "test": {
+                "indices": test_idx_list,
+                "source_files": [source_paths[index] for index in test_idx_list],
+                "count": len(test_idx_list),
+            },
+        },
+        "arrays": {
+            "front_images": {
+                "shape": list(front_images.shape),
+                "dtype": str(front_images.dtype),
+            },
+            "actions": {
+                "shape": list(actions.shape),
+                "dtype": str(actions.dtype),
+            },
+            "masks": {
+                "shape": list(masks.shape),
+                "dtype": str(masks.dtype),
+            },
+        },
+    }
+    manifest_path = Path(args.out_dir) / "dataset_manifest.json"
+    with manifest_path.open("w", encoding="utf-8") as stream:
+        json.dump(manifest, stream, indent=2, sort_keys=True)
+        stream.write("\n")
+    if not args.quiet:
+        print(" " * 4 + str(manifest_path))
